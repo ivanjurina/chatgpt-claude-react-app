@@ -22,12 +22,12 @@ export const chatService = {
     return response.data;
   },
 
-  async sendMessage(chatId: number, message: string): Promise<any> {
+  async sendMessage(chatId: number | null, message: string): Promise<any> {
     const response = await axios.post(
       `${API_URL}/api/Chat/message?provider=chatgpt`,
       {
         message,
-        chatId
+        chatId: chatId || null
       },
       {
         headers: {
