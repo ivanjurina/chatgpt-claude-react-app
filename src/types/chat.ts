@@ -2,7 +2,9 @@ export interface Message {
   id: number;
   content: string;
   isUserMessage: boolean;
-  timestamp: string;
+  createdAt: string;
+  chatId?: number;
+  role?: string;
 }
 
 export interface ChatHistory {

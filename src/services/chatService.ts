@@ -4,8 +4,8 @@ import { ChatHistory, Message } from '../types/chat';
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
 export const chatService = {
-  async getChatConversations(): Promise<ChatHistory[]> {
-    const response = await axios.get(`${API_URL}/api/chat/conversations`, {
+  async getChats(): Promise<ChatHistory[]> {
+    const response = await axios.get(`${API_URL}/api/chat`, {
       headers: {
         Authorization: `Bearer ${localStorage.getItem('token')}`,
       },
@@ -13,8 +13,8 @@ export const chatService = {
     return response.data;
   },
 
-  async getChatHistory(id: number): Promise<ChatHistory> {
-    const response = await axios.get(`${API_URL}/api/chat/conversations/${id}`, {
+  async getChat(id: number): Promise<ChatHistory> {
+    const response = await axios.get(`${API_URL}/api/chat/${id}`, {
       headers: {
         Authorization: `Bearer ${localStorage.getItem('token')}`,
       },
@@ -22,10 +22,13 @@ export const chatService = {
     return response.data;
   },
 
-  async sendMessage(historyId: number, content: string): Promise<Message> {
+  async sendMessage(chatId: number, message: string): Promise<any> {
     const response = await axios.post(
-      `${API_URL}/api/chat/conversations/${historyId}/messages`,
-      { content },
+      `${API_URL}/api/Chat/message?provider=chatgpt`,
+      {
+        message,
+        chatId
+      },
       {
         headers: {
           Authorization: `Bearer ${localStorage.getItem('token')}`,
@@ -37,7 +40,7 @@ export const chatService = {
 
   async createNewChat(): Promise<ChatHistory> {
     const response = await axios.post(
-      `${API_URL}/api/chat/conversations`,
+      `${API_URL}/api/chat/chats`,
       {},
       {
         headers: {

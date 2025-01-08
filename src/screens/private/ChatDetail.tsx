@@ -19,7 +19,7 @@ export default function ChatDetail() {
 
   const fetchChatHistory = async () => {
     try {
-      const history = await chatService.getChatHistory(Number(id));
+      const history = await chatService.getChat(Number(id));
       setChatHistory(history);
     } catch (err) {
       setError('Failed to fetch chat history');
@@ -33,11 +33,31 @@ export default function ChatDetail() {
     if (!newMessage.trim() || !id) return;
 
     try {
-      const message = await chatService.sendMessage(Number(id), newMessage);
-      setChatHistory((prev) => 
-        prev ? { ...prev, messages: [...prev.messages, message] } : null
+      const userMessage: Message = {
+        id: Date.now(),
+        content: newMessage,
+        isUserMessage: true,
+        createdAt: new Date().toISOString()
+      };
+
+      setChatHistory(prev => 
+        prev ? { ...prev, messages: [...prev.messages, userMessage] } : null
       );
+
       setNewMessage('');
+
+      const response = await chatService.sendMessage(Number(id), newMessage);
+
+      const aiMessage: Message = {
+        id: Date.now() + 1,
+        content: response.message,
+        isUserMessage: false,
+        createdAt: new Date().toISOString()
+      };
+
+      setChatHistory(prev => 
+        prev ? { ...prev, messages: [...prev.messages, aiMessage] } : null
+      );
     } catch (err) {
       setError('Failed to send message');
     }
@@ -62,7 +82,7 @@ export default function ChatDetail() {
             <div
               key={message.id}
               className={`p-3 rounded-lg max-w-[80%] ${
-                message.isUserMessage
+                message.role === 'user' || message.isUserMessage
                   ? 'bg-blue-500 text-white ml-auto'
                   : 'bg-gray-200 mr-auto'
               }`}

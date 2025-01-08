@@ -5,21 +5,21 @@ import { chatService } from '../../services/chatService';
 import { useNavigate } from 'react-router-dom';
 
 export default function ChatOverview() {
-  const [chatConversations, setChatConversations] = useState<ChatHistory[]>([]);
+  const [chatChats, setChatChats] = useState<ChatHistory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetchChatConversations();
+    fetchChatChats();
   }, []);
 
-  const fetchChatConversations = async () => {
+  const fetchChatChats = async () => {
     try {
-      const conversations = await chatService.getChatConversations();
-      setChatConversations(conversations);
+      const chats = await chatService.getChats();
+      setChatChats(chats);
     } catch (err) {
-      setError('Failed to fetch chat conversations');
+      setError('Failed to fetch chat chats');
     } finally {
       setLoading(false);
     }
@@ -49,7 +49,7 @@ export default function ChatOverview() {
         New Chat
       </Button>
       <div className="w-full">
-        {chatConversations.map((chat) => (
+        {chatChats.map((chat) => (
           <div
             key={chat.id}
             onClick={() => navigate(`/chat/${chat.id}`)}
