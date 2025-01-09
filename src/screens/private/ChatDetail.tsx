@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { CircularProgress, IconButton, TextField } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { ChatHistory, Message } from '../../types/chat';
@@ -7,18 +7,75 @@ import { chatService } from '../../services/chatService';
 
 export default function ChatDetail() {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
   const navigate = useNavigate();
-  const [chatHistory, setChatHistory] = useState<ChatHistory | null>(null);
-  const [loading, setLoading] = useState(true);
+  const initialChatHistory = location.state?.initialChatHistory;
+  const initialMessage = location.state?.initialMessage;
+  
+  const [chatHistory, setChatHistory] = useState<ChatHistory | null>(initialChatHistory || null);
+  const [loading, setLoading] = useState(!initialChatHistory);
   const [error, setError] = useState<string | null>(null);
   const [newMessage, setNewMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
 
   useEffect(() => {
-    if (id) {
+    if (location.state?.streaming && initialMessage) {
+      handleInitialMessage();
+    } else if (id) {
       fetchChatHistory();
     }
-  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [id, location.state]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleInitialMessage = async () => {
+    try {
+      setIsSending(true);
+      let currentContent = '';
+      let isComplete = false;
+
+      for await (const chunk of chatService.streamMessage(null, initialMessage)) {
+        if (chunk.chatId && !id) {
+          // Update URL with new chat ID
+          navigate(`/chat/${chunk.chatId}`, { replace: true });
+        }
+
+        currentContent += chunk.message;
+        isComplete = chunk.isComplete;
+        
+        // Use requestAnimationFrame for smoother updates
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        
+        setChatHistory(prev => {
+          if (!prev) return null;
+          const messages = [...prev.messages];
+          if (messages.length === 1) {
+            messages.push({
+              id: Date.now(),
+              content: currentContent,
+              isUserMessage: false,
+              createdAt: new Date().toISOString()
+            });
+          } else {
+            messages[1] = {
+              ...messages[1],
+              content: currentContent
+            };
+          }
+          return {
+            ...prev,
+            id: chunk.chatId || prev.id,
+            messages
+          };
+        });
+
+        if (isComplete) break;
+      }
+    } catch (err) {
+      setError('Failed to process initial message');
+      console.error('Error:', err);
+    } finally {
+      setIsSending(false);
+    }
+  };
 
   const fetchChatHistory = async () => {
     try {
@@ -33,7 +90,7 @@ export default function ChatDetail() {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !id || isSending) return;
+    if (!newMessage.trim() || isSending) return;
 
     try {
       setIsSending(true);
@@ -63,22 +120,24 @@ export default function ChatDetail() {
       );
 
       let currentContent = '';
-      let isComplete = false;
-      let hasError = false;
 
       try {
-        for await (const chunk of chatService.streamMessage(Number(id), newMessage)) {
-          if (hasError) {
-            // If we get here after an error, we've successfully reconnected
-            hasError = false;
+        for await (const chunk of chatService.streamMessage(id ? Number(id) : null, newMessage)) {
+          currentContent += chunk.message;
+          
+          // If this is a new chat and we got a ChatId, update the URL and chat history
+          if (!id && chunk.chatId) {
+            navigate(`/chat/${chunk.chatId}`);
+            if (!chatHistory) {
+              setChatHistory({
+                id: chunk.chatId,
+                title: newMessage.slice(0, 50) + (newMessage.length > 50 ? '...' : ''),
+                messages: [userMessage],
+                createdAt: new Date().toISOString()
+              });
+            }
           }
 
-          currentContent += chunk.Message;
-          isComplete = chunk.IsComplete;
-
-          // Use requestAnimationFrame for smoother updates
-          await new Promise(resolve => requestAnimationFrame(resolve));
-          
           setChatHistory(prev => {
             if (!prev) return null;
             return {
@@ -90,14 +149,9 @@ export default function ChatDetail() {
               )
             };
           });
-
-          if (isComplete) break;
         }
       } catch (streamError) {
         console.error('Streaming error:', streamError);
-        hasError = true;
-        
-        // Only show error if we didn't get any content
         if (!currentContent) {
           setChatHistory(prev => {
             if (!prev) return null;
@@ -106,19 +160,6 @@ export default function ChatDetail() {
               messages: prev.messages.map(msg =>
                 msg.id === aiMessageId
                   ? { ...msg, content: 'Error: Failed to load response. Please try again.' }
-                  : msg
-              )
-            };
-          });
-        } else {
-          // If we have partial content, indicate it's incomplete
-          setChatHistory(prev => {
-            if (!prev) return null;
-            return {
-              ...prev,
-              messages: prev.messages.map(msg =>
-                msg.id === aiMessageId
-                  ? { ...msg, content: currentContent + ' [Message interrupted. Refresh to see complete response.]' }
                   : msg
               )
             };

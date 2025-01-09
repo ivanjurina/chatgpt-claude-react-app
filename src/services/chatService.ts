@@ -4,9 +4,10 @@ import { ChatHistory } from '../types/chat';
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
 interface StreamResponse {
-  Message: string;
-  ChatId: number;
-  IsComplete: boolean;
+  message: string;
+  chatId: number;
+  isComplete: boolean;
+  isNewChat?: boolean;
 }
 
 export const chatService = {
@@ -97,11 +98,11 @@ export const chatService = {
           if (line.startsWith('data: ') && line.trim() !== 'data: ') {
             try {
               const jsonData = line.replace('data: ', '').trim();
-              if (jsonData) {
+              if (jsonData && jsonData !== '[DONE]') {
                 const data: StreamResponse = JSON.parse(jsonData);
                 yield data;
 
-                if (data.IsComplete) {
+                if (data.isComplete) {
                   return;
                 }
               }
