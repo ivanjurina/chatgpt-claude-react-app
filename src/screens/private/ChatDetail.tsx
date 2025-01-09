@@ -15,8 +15,10 @@ export default function ChatDetail() {
   const [isSending, setIsSending] = useState(false);
 
   useEffect(() => {
-    if (id) fetchChatHistory();
-  }, [id]);
+    if (id) {
+      fetchChatHistory();
+    }
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchChatHistory = async () => {
     try {

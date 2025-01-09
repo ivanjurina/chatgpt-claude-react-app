@@ -12,5 +12,19 @@ export const authService = {
   async register(data: LoginDto): Promise<AuthResponseDto> {
     const response = await axios.post(`${API_URL}/api/auth/register`, data);
     return response.data;
+  },
+
+  async changePassword(newPassword: string): Promise<any> {
+    const response = await axios.post(
+      `${API_URL}/api/auth/change-password?newPassword=${newPassword}`,
+      null,
+      {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        },
+      }
+    );
+    return response.data;
   }
 }; 
