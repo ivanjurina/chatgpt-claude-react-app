@@ -12,6 +12,7 @@ export default function ChatDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [newMessage, setNewMessage] = useState('');
+  const [isSending, setIsSending] = useState(false);
 
   useEffect(() => {
     if (id) fetchChatHistory();
@@ -30,9 +31,10 @@ export default function ChatDetail() {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !id) return;
+    if (!newMessage.trim() || !id || isSending) return;
 
     try {
+      setIsSending(true);
       const userMessage: Message = {
         id: Date.now(),
         content: newMessage,
@@ -60,6 +62,8 @@ export default function ChatDetail() {
       );
     } catch (err) {
       setError('Failed to send message');
+    } finally {
+      setIsSending(false);
     }
   };
 
@@ -90,6 +94,13 @@ export default function ChatDetail() {
               {message.content}
             </div>
           ))}
+          {isSending && (
+            <div className="flex items-center gap-2 text-gray-500">
+              <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" />
+              <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce [animation-delay:0.2s]" />
+              <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce [animation-delay:0.4s]" />
+            </div>
+          )}
         </div>
 
         <form onSubmit={handleSendMessage} className="w-full flex gap-2">
@@ -99,12 +110,16 @@ export default function ChatDetail() {
             onChange={(e) => setNewMessage(e.target.value)}
             placeholder="Type your message..."
             variant="outlined"
+            disabled={isSending}
           />
           <button
             type="submit"
-            className="px-6 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            disabled={isSending}
+            className={`px-6 py-2 rounded text-white ${
+              isSending ? 'bg-gray-400' : 'bg-blue-500 hover:bg-blue-600'
+            }`}
           >
-            Send
+            {isSending ? '...' : 'Send'}
           </button>
         </form>
       </div>

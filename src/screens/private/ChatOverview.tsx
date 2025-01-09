@@ -66,9 +66,20 @@ export default function ChatOverview() {
           variant="contained"
           color="primary"
           disabled={isCreating || !newChatMessage.trim()}
-          className="w-full"
+          className="w-full relative"
         >
-          {isCreating ? 'Creating...' : 'Start New Chat'}
+          {isCreating ? (
+            <div className="flex items-center gap-2">
+              <span>Creating</span>
+              <div className="flex gap-1">
+                <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce" />
+                <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce [animation-delay:0.2s]" />
+                <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce [animation-delay:0.4s]" />
+              </div>
+            </div>
+          ) : (
+            'Start New Chat'
+          )}
         </Button>
       </form>
 
