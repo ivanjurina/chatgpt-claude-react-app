@@ -1,13 +1,14 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User } from '../services/authService';
 
 interface AuthContextType {
-  isAuthenticated: boolean;
-  setIsAuthenticated: (value: boolean) => void;
-  user: User | null;
-  setUser: (user: User | null) => void;
   token: string | null;
   setToken: (token: string | null) => void;
+  user: any | null;
+  setUser: (user: any | null) => void;
+  isAuthenticated: boolean;
+  setIsAuthenticated: (value: boolean) => void;
+  isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -61,7 +62,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user,
     setUser,
     token,
-    setToken
+    setToken,
+    isLoading: false
   };
 
   return (

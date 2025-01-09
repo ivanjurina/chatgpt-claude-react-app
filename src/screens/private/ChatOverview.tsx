@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TextField, Button, CircularProgress } from '@mui/material';
 import { chatService } from '../../services/chatService';
-import { ChatHistory, Message } from '../../types/chat';
+import { ChatHistory } from '../../types/chat';
+import { useAuth } from '../../contexts/AuthContext';
 
 const ChatOverview = () => {
   const [chatChats, setChatChats] = useState<ChatHistory[]>([]);
@@ -11,20 +12,21 @@ const ChatOverview = () => {
   const [newMessage, setNewMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
 
   useEffect(() => {
-    fetchChatChats();
-  }, []);
+    if (isAuthenticated) {
+      fetchChatChats();
+    }
+  }, [isAuthenticated]);
 
   const fetchChatChats = async () => {
     try {
       setLoading(true);
       const chats = await chatService.getChats();
-      // Handle empty array as valid response
       setChatChats(chats || []);
     } catch (err) {
       console.error('Error fetching chats:', err);
-      // Only set error for actual failures, not empty results
       if (err instanceof Error && err.message !== 'No chats found') {
         setError('Failed to fetch chat history');
       }

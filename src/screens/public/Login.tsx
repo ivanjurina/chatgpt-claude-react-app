@@ -14,9 +14,20 @@ export default function Login() {
     e.preventDefault();
     try {
       const response = await authService.login({ username, password });
+      
+      // Set token first
       setToken(response.token);
+      localStorage.setItem('token', response.token);
+      
+      // Then set other auth states
       setUser(response.user);
+      
+      // Set authenticated last
       setIsAuthenticated(true);
+      
+      // Add small delay before navigation to ensure auth state is updated
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       navigate('/', { replace: true });
     } catch (err) {
       setError('Invalid credentials');

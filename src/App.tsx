@@ -5,48 +5,43 @@ import ChatOverview from './screens/private/ChatOverview';
 import ChatDetail from './screens/private/ChatDetail';
 import MainLayout from './components/layout/MainLayout';
 
-function PrivateRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuth();
-  
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+interface PrivateRouteProps {
+  children: React.ReactNode;
+}
+
+function PrivateRoute({ children }: PrivateRouteProps): JSX.Element {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return <div className="flex justify-center items-center h-screen">Loading...</div>;
   }
 
-  return <MainLayout>{children}</MainLayout>;
+  return isAuthenticated ? <>{children}</> : <Navigate to="/login" />;
 }
 
 function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
+    <BrowserRouter>
+      <AuthProvider>
         <Routes>
-          {/* Public routes */}
           <Route path="/login" element={<Login />} />
-          
-          {/* Protected routes */}
           <Route path="/" element={
             <PrivateRoute>
-              <ChatOverview />
+              <MainLayout>
+                <ChatOverview />
+              </MainLayout>
             </PrivateRoute>
           } />
-          
-          <Route path="/chat" element={
-            <PrivateRoute>
-              <ChatDetail />
-            </PrivateRoute>
-          } />
-          
           <Route path="/chat/:id" element={
             <PrivateRoute>
-              <ChatDetail />
+              <MainLayout>
+                <ChatDetail />
+              </MainLayout>
             </PrivateRoute>
           } />
-
-          {/* Catch all redirect to home */}
-          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-      </BrowserRouter>
-    </AuthProvider>
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
 
