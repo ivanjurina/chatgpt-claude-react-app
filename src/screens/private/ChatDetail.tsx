@@ -50,11 +50,10 @@ export default function ChatDetail() {
 
       setNewMessage('');
 
-      const response = await chatService.sendMessage(Number(id), newMessage);
-
+      const aiMessageId = Date.now() + 1;
       const aiMessage: Message = {
-        id: Date.now() + 1,
-        content: response.message,
+        id: aiMessageId,
+        content: '',
         isUserMessage: false,
         createdAt: new Date().toISOString()
       };
@@ -62,8 +61,74 @@ export default function ChatDetail() {
       setChatHistory(prev => 
         prev ? { ...prev, messages: [...prev.messages, aiMessage] } : null
       );
+
+      let currentContent = '';
+      let isComplete = false;
+      let hasError = false;
+
+      try {
+        for await (const chunk of chatService.streamMessage(Number(id), newMessage)) {
+          if (hasError) {
+            // If we get here after an error, we've successfully reconnected
+            hasError = false;
+          }
+
+          currentContent += chunk.Message;
+          isComplete = chunk.IsComplete;
+
+          // Use requestAnimationFrame for smoother updates
+          await new Promise(resolve => requestAnimationFrame(resolve));
+          
+          setChatHistory(prev => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              messages: prev.messages.map(msg =>
+                msg.id === aiMessageId
+                  ? { ...msg, content: currentContent }
+                  : msg
+              )
+            };
+          });
+
+          if (isComplete) break;
+        }
+      } catch (streamError) {
+        console.error('Streaming error:', streamError);
+        hasError = true;
+        
+        // Only show error if we didn't get any content
+        if (!currentContent) {
+          setChatHistory(prev => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              messages: prev.messages.map(msg =>
+                msg.id === aiMessageId
+                  ? { ...msg, content: 'Error: Failed to load response. Please try again.' }
+                  : msg
+              )
+            };
+          });
+        } else {
+          // If we have partial content, indicate it's incomplete
+          setChatHistory(prev => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              messages: prev.messages.map(msg =>
+                msg.id === aiMessageId
+                  ? { ...msg, content: currentContent + ' [Message interrupted. Refresh to see complete response.]' }
+                  : msg
+              )
+            };
+          });
+        }
+      }
+
     } catch (err) {
       setError('Failed to send message');
+      console.error('Error:', err);
     } finally {
       setIsSending(false);
     }
