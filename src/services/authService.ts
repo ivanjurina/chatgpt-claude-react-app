@@ -1,30 +1,53 @@
 import axios from 'axios';
-import { AuthResponseDto, LoginDto } from '../types/auth';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
-export const authService = {
-  async login(credentials: LoginDto): Promise<AuthResponseDto> {
-    const response = await axios.post(`${API_URL}/api/auth/login`, credentials);
-    return response.data;
-  },
-  
-  async register(data: LoginDto): Promise<AuthResponseDto> {
-    const response = await axios.post(`${API_URL}/api/auth/register`, data);
-    return response.data;
-  },
+export interface User {
+  id: number;
+  username: string;
+  email?: string;
+}
 
-  async changePassword(newPassword: string): Promise<any> {
-    const response = await axios.post(
-      `${API_URL}/api/auth/change-password?newPassword=${newPassword}`,
-      null,
+interface LoginResponse {
+  token: string;
+  user: User;
+}
+
+interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+interface ChangePasswordRequest {
+  newPassword: string;
+}
+
+export const authService = {
+  async login({ username, password }: LoginRequest): Promise<LoginResponse> {
+    const response = await axios.post<LoginResponse>(
+      `${API_URL}/api/auth/login`,
+      { username, password },
       {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
       }
     );
     return response.data;
-  }
+  },
+
+  async changePassword(newPassword: string): Promise<void> {
+    await axios.post(
+      `${API_URL}/api/auth/change-password`,
+      { newPassword } as ChangePasswordRequest,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
+      }
+    );
+  },
+
+  // Add other auth-related methods as needed
 }; 

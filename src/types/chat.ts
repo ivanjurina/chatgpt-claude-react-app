@@ -1,10 +1,9 @@
 export interface Message {
   id: number;
   content: string;
-  isUserMessage: boolean;
+  role: 'user' | 'assistant';
   createdAt: string;
-  chatId?: number;
-  role?: string;
+  isUserMessage?: boolean;
 }
 
 export interface ChatHistory {

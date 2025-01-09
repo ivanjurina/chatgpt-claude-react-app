@@ -12,12 +12,26 @@ interface StreamResponse {
 
 export const chatService = {
   async getChats(): Promise<ChatHistory[]> {
-    const response = await axios.get(`${API_URL}/api/chat`, {
-      headers: {
-        Authorization: `Bearer ${localStorage.getItem('token')}`,
-      },
-    });
-    return response.data;
+    try {
+      const response = await fetch(`${API_URL}/api/chat`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          return [];
+        }
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data || [];
+    } catch (error) {
+      console.error('Error fetching chats:', error);
+      return [];
+    }
   },
 
   async getChat(id: number): Promise<ChatHistory> {

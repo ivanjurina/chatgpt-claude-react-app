@@ -18,25 +18,14 @@ interface ChangePasswordDialogProps {
 export default function ChangePasswordDialog({ open, onClose }: ChangePasswordDialogProps) {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Reset states
-    setError(null);
-    setSuccess(false);
-
-    // Validate passwords
     if (newPassword !== confirmPassword) {
-      setError("Passwords don't match");
-      return;
-    }
-
-    if (newPassword.length < 6) {
-      setError('Password must be at least 6 characters long');
+      setError('Passwords do not match');
       return;
     }
 
@@ -46,12 +35,14 @@ export default function ChangePasswordDialog({ open, onClose }: ChangePasswordDi
       setSuccess(true);
       setNewPassword('');
       setConfirmPassword('');
+      setError(null);
       setTimeout(() => {
         onClose();
         setSuccess(false);
-      }, 2000);
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to change password');
+      }, 1500);
+    } catch (err) {
+      setError('Failed to change password');
+      console.error('Change password error:', err);
     } finally {
       setLoading(false);
     }

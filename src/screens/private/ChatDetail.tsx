@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { CircularProgress, IconButton, TextField } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -18,13 +18,26 @@ export default function ChatDetail() {
   const [newMessage, setNewMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
 
+  const fetchChatHistory = useCallback(async () => {
+    try {
+      setLoading(true);
+      const response = await chatService.getChat(Number(id));
+      setChatHistory(response);
+    } catch (err) {
+      setError('Failed to load chat history');
+      console.error('Error:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
   useEffect(() => {
     if (location.state?.streaming && initialMessage) {
       handleInitialMessage();
     } else if (id) {
       fetchChatHistory();
     }
-  }, [id, location.state]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [id, location.state, initialMessage, fetchChatHistory]); // Added proper dependencies
 
   const handleInitialMessage = async () => {
     try {
@@ -32,32 +45,34 @@ export default function ChatDetail() {
       let currentContent = '';
       let isComplete = false;
 
+      // eslint-disable-next-line no-loop-func
       for await (const chunk of chatService.streamMessage(null, initialMessage)) {
         if (chunk.chatId && !id) {
-          // Update URL with new chat ID
           navigate(`/chat/${chunk.chatId}`, { replace: true });
         }
 
         currentContent += chunk.message;
         isComplete = chunk.isComplete;
         
-        // Use requestAnimationFrame for smoother updates
         await new Promise(resolve => requestAnimationFrame(resolve));
         
+        // Create a stable reference to currentContent
+        const content = currentContent;
         setChatHistory(prev => {
           if (!prev) return null;
           const messages = [...prev.messages];
           if (messages.length === 1) {
             messages.push({
               id: Date.now(),
-              content: currentContent,
+              content: content,
+              role: 'assistant',
               isUserMessage: false,
               createdAt: new Date().toISOString()
             });
           } else {
             messages[1] = {
               ...messages[1],
-              content: currentContent
+              content: content
             };
           }
           return {
@@ -77,26 +92,19 @@ export default function ChatDetail() {
     }
   };
 
-  const fetchChatHistory = async () => {
-    try {
-      const history = await chatService.getChat(Number(id));
-      setChatHistory(history);
-    } catch (err) {
-      setError('Failed to fetch chat history');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim() || isSending) return;
 
     try {
       setIsSending(true);
+      const messageToSend = newMessage;
+      setNewMessage('');
+
       const userMessage: Message = {
         id: Date.now(),
-        content: newMessage,
+        content: messageToSend,
+        role: 'user',
         isUserMessage: true,
         createdAt: new Date().toISOString()
       };
@@ -105,12 +113,11 @@ export default function ChatDetail() {
         prev ? { ...prev, messages: [...prev.messages, userMessage] } : null
       );
 
-      setNewMessage('');
-
       const aiMessageId = Date.now() + 1;
       const aiMessage: Message = {
         id: aiMessageId,
         content: '',
+        role: 'assistant',
         isUserMessage: false,
         createdAt: new Date().toISOString()
       };
@@ -122,16 +129,20 @@ export default function ChatDetail() {
       let currentContent = '';
 
       try {
-        for await (const chunk of chatService.streamMessage(id ? Number(id) : null, newMessage)) {
-          currentContent += chunk.message;
+        for await (const chunk of chatService.streamMessage(id ? Number(id) : null, messageToSend)) {
+          // Skip the final complete message if we already have the content
+          if (chunk.isComplete && chunk.message === currentContent) {
+            continue;
+          }
           
-          // If this is a new chat and we got a ChatId, update the URL and chat history
+          currentContent = chunk.isComplete ? chunk.message : currentContent + chunk.message;
+          
           if (!id && chunk.chatId) {
-            navigate(`/chat/${chunk.chatId}`);
+            navigate(`/chat/${chunk.chatId}`, { replace: true });
             if (!chatHistory) {
               setChatHistory({
                 id: chunk.chatId,
-                title: newMessage.slice(0, 50) + (newMessage.length > 50 ? '...' : ''),
+                title: messageToSend.slice(0, 50) + (messageToSend.length > 50 ? '...' : ''),
                 messages: [userMessage],
                 createdAt: new Date().toISOString()
               });
@@ -142,7 +153,7 @@ export default function ChatDetail() {
             if (!prev) return null;
             return {
               ...prev,
-              messages: prev.messages.map(msg =>
+              messages: prev.messages.map(msg => 
                 msg.id === aiMessageId
                   ? { ...msg, content: currentContent }
                   : msg
@@ -157,7 +168,7 @@ export default function ChatDetail() {
             if (!prev) return null;
             return {
               ...prev,
-              messages: prev.messages.map(msg =>
+              messages: prev.messages.map(msg => 
                 msg.id === aiMessageId
                   ? { ...msg, content: 'Error: Failed to load response. Please try again.' }
                   : msg
@@ -175,60 +186,88 @@ export default function ChatDetail() {
     }
   };
 
-  if (loading) return <CircularProgress />;
-  if (error) return <div className="text-red-500">{error}</div>;
-  if (!chatHistory) return <div>Chat not found</div>;
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage(e as any);
+    }
+  };
+
+  if (loading) return (
+    <div className="flex justify-center items-center h-screen">
+      <CircularProgress />
+    </div>
+  );
+
+  if (error) return (
+    <div className="text-red-500 text-center">
+      {error}
+    </div>
+  );
 
   return (
-    <div className="w-full flex max-w-[1440px] flex-col items-center px-5 pb-5 flex-1 max-h-[calc(100svh-98px)]">
-      <div className="w-full flex flex-col items-center rounded-3xl shadow-lg p-5 bg-gray-100 flex-1">
-        <div className="flex items-center gap-10 pb-10 w-full">
-          <IconButton size="medium" onClick={() => navigate(-1)}>
-            <ArrowBackIcon />
-          </IconButton>
-          <h1 className="text-xl">{chatHistory.title}</h1>
-        </div>
-        
-        <div className="flex-1 w-full overflow-y-auto mb-4 space-y-4 p-4">
-          {chatHistory.messages.map((message: Message) => (
+    <div className="flex flex-col h-[calc(100vh-64px)]"> {/* Subtract navbar height */}
+      {/* Header */}
+      <div className="flex items-center gap-4 p-4 border-b">
+        <IconButton size="medium" onClick={() => navigate(-1)}>
+          <ArrowBackIcon />
+        </IconButton>
+        <h1 className="text-xl font-semibold">
+          {chatHistory?.title || 'New Chat'}
+        </h1>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-white">
+        {chatHistory?.messages.map((message) => (
+          <div
+            key={message.id}
+            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+          >
             <div
-              key={message.id}
-              className={`p-3 rounded-lg max-w-[80%] ${
-                message.role === 'user' || message.isUserMessage
-                  ? 'bg-blue-500 text-white ml-auto'
-                  : 'bg-gray-200 mr-auto'
+              className={`max-w-[70%] p-3 rounded-lg ${
+                message.role === 'user'
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-50 border border-gray-200 text-gray-900'
               }`}
             >
-              {message.content}
+              <pre className="whitespace-pre-wrap font-sans">
+                {message.content}
+              </pre>
             </div>
-          ))}
-          {isSending && (
-            <div className="flex items-center gap-2 text-gray-500">
-              <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" />
-              <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce [animation-delay:0.2s]" />
-              <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce [animation-delay:0.4s]" />
-            </div>
-          )}
-        </div>
+          </div>
+        ))}
+      </div>
 
-        <form onSubmit={handleSendMessage} className="w-full flex gap-2">
+      {/* Input */}
+      <div className="p-4 border-t bg-white">
+        <form onSubmit={handleSendMessage} className="flex gap-2">
           <TextField
             fullWidth
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
+            onKeyPress={handleKeyPress}
             placeholder="Type your message..."
             variant="outlined"
             disabled={isSending}
+            multiline
+            maxRows={4}
+            size="small"
           />
-          <button
+          <IconButton
             type="submit"
-            disabled={isSending}
-            className={`px-6 py-2 rounded text-white ${
-              isSending ? 'bg-gray-400' : 'bg-blue-500 hover:bg-blue-600'
-            }`}
+            color="primary"
+            disabled={isSending || !newMessage.trim()}
+            className="self-end"
           >
-            {isSending ? '...' : 'Send'}
-          </button>
+            {isSending ? (
+              <CircularProgress size={24} />
+            ) : (
+              <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+              </svg>
+            )}
+          </IconButton>
         </form>
       </div>
     </div>
