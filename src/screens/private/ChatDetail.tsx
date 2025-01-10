@@ -4,6 +4,7 @@ import { CircularProgress, IconButton, TextField } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { ChatHistory, Message } from '../../types/chat';
 import { chatService } from '../../services/chatService';
+import VoiceRecorder from '../../components/common/VoiceRecorder';
 
 export default function ChatDetail() {
   const { id } = useParams<{ id: string }>();
@@ -193,6 +194,66 @@ export default function ChatDetail() {
     }
   };
 
+  const handleChatResponse = (message: string, chatId: number, isComplete: boolean) => {
+    if (!id && chatId) {
+      navigate(`/chat/${chatId}`, { replace: true });
+    }
+    setChatHistory(prev => {
+      if (!prev) return null;
+      const messages = [...prev.messages];
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage && lastMessage.role === 'assistant' && !isComplete) {
+        // Update the existing assistant message while streaming
+        messages[messages.length - 1] = {
+          ...lastMessage,
+          content: message
+        };
+      } else if (isComplete) {
+        // Add or update the final message
+        if (lastMessage && lastMessage.role === 'assistant') {
+          messages[messages.length - 1] = {
+            ...lastMessage,
+            content: message
+          };
+        } else {
+          messages.push({
+            id: Date.now(),
+            content: message,
+            role: 'assistant',
+            isUserMessage: false,
+            createdAt: new Date().toISOString()
+          });
+        }
+      }
+      return {
+        ...prev,
+        id: chatId || prev.id,
+        messages
+      };
+    });
+  };
+
+  const handleAddUserMessage = (text: string) => {
+    setChatHistory(prev => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        messages: [...prev.messages, {
+          id: Date.now(),
+          content: text,
+          role: 'user',
+          isUserMessage: true,
+          createdAt: new Date().toISOString()
+        }]
+      };
+    });
+  };
+
+  const handleTranscriptionComplete = (text: string) => {
+    console.log('Setting transcribed text:', text); // Debug log
+    setNewMessage(text); // This should update the text input
+  };
+
   if (loading) return (
     <div className="flex justify-center items-center h-screen">
       <CircularProgress />
@@ -241,12 +302,18 @@ export default function ChatDetail() {
 
       {/* Input */}
       <div className="p-4 border-t bg-white">
-        <form onSubmit={handleSendMessage} className="flex gap-2">
+        <form onSubmit={(e) => {
+          e.preventDefault();
+          handleSendMessage(e);
+        }} className="flex gap-2">
+          <VoiceRecorder 
+            onTranscriptionComplete={handleTranscriptionComplete}
+          />
           <TextField
             fullWidth
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
-            onKeyPress={handleKeyPress}
+            onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage(e)}
             placeholder="Type your message..."
             variant="outlined"
             disabled={isSending}
