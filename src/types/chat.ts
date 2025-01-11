@@ -2,13 +2,13 @@ export interface Message {
   id: number;
   content: string;
   role: 'user' | 'assistant';
+  isUserMessage: boolean;
   createdAt: string;
-  isUserMessage?: boolean;
 }
 
 export interface ChatHistory {
-  id: number;
-  title: string;
+  id?: number;
+  title?: string;
   messages: Message[];
-  createdAt: string;
+  createdAt?: string;
 } 
