@@ -1,37 +1,64 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TextField, IconButton, CircularProgress, Button } from '@mui/material';
+import { 
+  TextField, 
+  IconButton, 
+  CircularProgress, 
+  Button,
+  Pagination,
+  Typography
+} from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import { chatService } from '../../services/chatService';
 import VoiceRecorder from '../../components/common/VoiceRecorder';
 
-interface StreamResponse {
-  chatId?: number;
-  message?: string;
-  isComplete?: boolean;
+interface PaginatedResult<T> {
+  items: T[];
+  pageNumber: number;
+  pageSize: number;
+  totalPages: number;
+  totalCount: number;
+  hasNext: boolean;
+  hasPrevious: boolean;
+  firstItemIndex: number;
+  lastItemIndex: number;
+  hasItems: boolean;
+}
+
+interface Chat {
+  id: number;
+  title: string;
+  createdAt: string;
 }
 
 export default function ChatOverview() {
-  const [chats, setChats] = useState<any[]>([]);
+  const [chats, setChats] = useState<PaginatedResult<Chat> | null>(null);
   const [loading, setLoading] = useState(true);
   const [showNewChat, setShowNewChat] = useState(false);
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
+  const [page, setPage] = useState(1);
+  const pageSize = 5;
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetchChats();
-  }, []);
+    fetchChats(page);
+  }, [page]);
 
-  const fetchChats = async () => {
+  const fetchChats = async (pageNumber: number) => {
     try {
-      const response = await chatService.getChats();
+      setLoading(true);
+      const response = await chatService.getChats(pageNumber, pageSize);
       setChats(response);
     } catch (error) {
       console.error('Error fetching chats:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => {
+    setPage(value);
   };
 
   const handleNewChat = async (e: React.FormEvent) => {
@@ -130,8 +157,8 @@ export default function ChatOverview() {
         </form>
       )}
 
-      <div className="space-y-2">
-        {chats.map((chat) => (
+      <div className="space-y-2 mb-4">
+        {chats?.items.map((chat) => (
           <div
             key={chat.id}
             onClick={() => navigate(`/chat/${chat.id}`)}
@@ -144,6 +171,20 @@ export default function ChatOverview() {
           </div>
         ))}
       </div>
+
+      {chats?.hasItems && (
+        <div className="flex flex-col items-center gap-2">
+          <Pagination
+            count={chats.totalPages}
+            page={page}
+            onChange={handlePageChange}
+            color="primary"
+          />
+          <Typography variant="caption" color="textSecondary">
+            Showing {chats.firstItemIndex}-{chats.lastItemIndex} of {chats.totalCount} chats
+          </Typography>
+        </div>
+      )}
     </div>
   );
 } 

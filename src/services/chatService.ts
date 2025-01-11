@@ -3,35 +3,47 @@ import { ChatHistory } from '../types/chat';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
+interface PaginatedResult<T> {
+  items: T[];
+  pageNumber: number;
+  pageSize: number;
+  totalPages: number;
+  totalCount: number;
+  hasNext: boolean;
+  hasPrevious: boolean;
+  firstItemIndex: number;
+  lastItemIndex: number;
+  hasItems: boolean;
+}
+
+interface Chat {
+  id: number;
+  title: string;
+  createdAt: string;
+}
+
 interface StreamResponse {
-  message: string;
-  chatId: number;
-  isComplete: boolean;
-  isNewChat?: boolean;
+  chatId?: number;
+  message?: string;
+  isComplete?: boolean;
 }
 
 export const chatService = {
-  async getChats(): Promise<ChatHistory[]> {
-    try {
-      const response = await fetch(`${API_URL}/api/chat`, {
+  async getChats(pageNumber: number = 1, pageSize: number = 5): Promise<PaginatedResult<Chat>> {
+    const response = await fetch(
+      `${API_URL}/api/chat/chats?pageNumber=${pageNumber}&pageSize=${pageSize}`,
+      {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
-      });
-
-      if (!response.ok) {
-        if (response.status === 404) {
-          return [];
-        }
-        throw new Error(`HTTP error! status: ${response.status}`);
       }
+    );
 
-      const data = await response.json();
-      return data || [];
-    } catch (error) {
-      console.error('Error fetching chats:', error);
-      return [];
+    if (!response.ok) {
+      throw new Error('Failed to fetch chats');
     }
+
+    return response.json();
   },
 
   async getChat(id: number): Promise<ChatHistory> {
@@ -72,44 +84,44 @@ export const chatService = {
     return response.data;
   },
 
-  async *streamMessage(chatId: number | null, message: string) {
-    const response = await fetch(`${API_URL}/api/Chat/message/stream?provider=chatgpt`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        'Accept': 'text/event-stream',
-      },
-      body: JSON.stringify({
-        message,
-        chatId
-      })
-    });
+  async *streamMessage(chatId: number | null, message: string): AsyncGenerator<StreamResponse> {
+    const response = await fetch(
+      `${API_URL}/api/chat/message/stream`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          chatId,
+          message
+        })
+      }
+    );
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      throw new Error('Failed to send message');
     }
 
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error('No reader available');
-    }
-
+    const reader = response.body!.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
 
     try {
       while (true) {
-        const { value, done } = await reader.read();
+        const { done, value } = await reader.read();
         
-        if (done) break;
+        if (done) {
+          break;
+        }
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
         buffer = lines.pop() || '';
 
         for (const line of lines) {
-          if (line.startsWith('data: ') && line.trim() !== 'data: ') {
+          if (line.trim()) {
             try {
               const jsonData = line.replace('data: ', '').trim();
               if (jsonData && jsonData !== '[DONE]') {
@@ -121,16 +133,15 @@ export const chatService = {
                 }
               }
             } catch (e) {
-              console.error('Failed to parse SSE data:', line, e);
+              console.error('Error parsing stream data:', e);
             }
           }
         }
       }
-    } catch (error: unknown) {
-      console.error('Stream error:', error);
-      throw error;
     } finally {
       reader.releaseLock();
     }
   }
-}; 
+};
+
+export type { PaginatedResult, Chat, StreamResponse }; 

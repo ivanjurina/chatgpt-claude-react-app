@@ -5,23 +5,23 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { ChatHistory, Message } from '../../types/chat';
 import { chatService } from '../../services/chatService';
 import VoiceRecorder from '../../components/common/VoiceRecorder';
+import { type StreamResponse } from '../../services/chatService';
 
 export default function ChatDetail() {
-  const { id } = useParams<{ id: string }>();
+  const { id } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const initialChatHistory = location.state?.initialChatHistory;
-  const initialMessage = location.state?.initialMessage;
-  
-  const [chatHistory, setChatHistory] = useState<ChatHistory | null>(initialChatHistory || null);
-  const [loading, setLoading] = useState(!initialChatHistory);
-  const [error, setError] = useState<string | null>(null);
+  const [chatHistory, setChatHistory] = useState<ChatHistory | null>(null);
   const [newMessage, setNewMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const initialMessage = location.state?.message as string;
 
   const fetchChatHistory = useCallback(async () => {
     try {
       setLoading(true);
+      setError(null); // Reset error state
       const response = await chatService.getChat(Number(id));
       setChatHistory(response);
     } catch (err) {
@@ -34,62 +34,57 @@ export default function ChatDetail() {
 
   useEffect(() => {
     if (location.state?.streaming && initialMessage) {
-      handleInitialMessage();
+      handleInitialMessage(initialMessage);
     } else if (id) {
       fetchChatHistory();
     }
-  }, [id, location.state, initialMessage, fetchChatHistory]); // Added proper dependencies
+  }, [id, location.state, initialMessage, fetchChatHistory]);
 
-  const handleInitialMessage = async () => {
+  const handleInitialMessage = async (initialMessage: string) => {
     try {
-      setIsSending(true);
       let currentContent = '';
       let isComplete = false;
 
-      // eslint-disable-next-line no-loop-func
       for await (const chunk of chatService.streamMessage(null, initialMessage)) {
-        if (chunk.chatId && !id) {
-          navigate(`/chat/${chunk.chatId}`, { replace: true });
+        if (chunk.message) {
+          currentContent += chunk.message;
         }
-
-        currentContent += chunk.message;
-        isComplete = chunk.isComplete;
+        isComplete = chunk.isComplete ?? false;
         
         await new Promise(resolve => requestAnimationFrame(resolve));
         
-        // Create a stable reference to currentContent
-        const content = currentContent;
         setChatHistory(prev => {
           if (!prev) return null;
           const messages = [...prev.messages];
-          if (messages.length === 1) {
+          const lastMessage = messages[messages.length - 1];
+          
+          if (lastMessage && lastMessage.role === 'assistant') {
+            messages[messages.length - 1] = {
+              ...lastMessage,
+              content: currentContent
+            };
+          } else {
             messages.push({
               id: Date.now(),
-              content: content,
+              content: currentContent,
               role: 'assistant',
               isUserMessage: false,
               createdAt: new Date().toISOString()
             });
-          } else {
-            messages[1] = {
-              ...messages[1],
-              content: content
-            };
           }
+          
           return {
             ...prev,
-            id: chunk.chatId || prev.id,
             messages
           };
         });
 
-        if (isComplete) break;
+        if (isComplete) {
+          break;
+        }
       }
-    } catch (err) {
-      setError('Failed to process initial message');
-      console.error('Error:', err);
-    } finally {
-      setIsSending(false);
+    } catch (error) {
+      console.error('Error handling initial message:', error);
     }
   };
 
@@ -97,91 +92,70 @@ export default function ChatDetail() {
     e.preventDefault();
     if (!newMessage.trim() || isSending) return;
 
+    const messageToSend = newMessage;
+    setNewMessage('');
+    setIsSending(true);
+
     try {
-      setIsSending(true);
-      const messageToSend = newMessage;
-      setNewMessage('');
-
-      const userMessage: Message = {
-        id: Date.now(),
-        content: messageToSend,
-        role: 'user',
-        isUserMessage: true,
-        createdAt: new Date().toISOString()
-      };
-
-      setChatHistory(prev => 
-        prev ? { ...prev, messages: [...prev.messages, userMessage] } : null
-      );
-
-      const aiMessageId = Date.now() + 1;
-      const aiMessage: Message = {
-        id: aiMessageId,
-        content: '',
-        role: 'assistant',
-        isUserMessage: false,
-        createdAt: new Date().toISOString()
-      };
-
-      setChatHistory(prev => 
-        prev ? { ...prev, messages: [...prev.messages, aiMessage] } : null
-      );
+      // Add user message immediately
+      setChatHistory(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          messages: [...prev.messages, {
+            id: Date.now(),
+            content: messageToSend,
+            role: 'user',
+            isUserMessage: true,
+            createdAt: new Date().toISOString()
+          }]
+        };
+      });
 
       let currentContent = '';
 
-      try {
-        for await (const chunk of chatService.streamMessage(id ? Number(id) : null, messageToSend)) {
-          // Skip the final complete message if we already have the content
-          if (chunk.isComplete && chunk.message === currentContent) {
-            continue;
-          }
-          
-          currentContent = chunk.isComplete ? chunk.message : currentContent + chunk.message;
+      for await (const chunk of chatService.streamMessage(id ? Number(id) : null, messageToSend)) {
+        if (chunk.message) {
+          currentContent = chunk.isComplete ? 
+            (chunk.message || '') : 
+            (currentContent + (chunk.message || ''));
           
           if (!id && chunk.chatId) {
             navigate(`/chat/${chunk.chatId}`, { replace: true });
-            if (!chatHistory) {
-              setChatHistory({
-                id: chunk.chatId,
-                title: messageToSend.slice(0, 50) + (messageToSend.length > 50 ? '...' : ''),
-                messages: [userMessage],
-                createdAt: new Date().toISOString()
-              });
-            }
           }
 
           setChatHistory(prev => {
             if (!prev) return null;
+            const messages = [...prev.messages];
+            const lastMessage = messages[messages.length - 1];
+            
+            if (lastMessage && lastMessage.role === 'assistant') {
+              messages[messages.length - 1] = {
+                ...lastMessage,
+                content: currentContent
+              };
+            } else {
+              messages.push({
+                id: Date.now(),
+                content: currentContent,
+                role: 'assistant',
+                isUserMessage: false,
+                createdAt: new Date().toISOString()
+              });
+            }
+            
             return {
               ...prev,
-              messages: prev.messages.map(msg => 
-                msg.id === aiMessageId
-                  ? { ...msg, content: currentContent }
-                  : msg
-              )
+              id: chunk.chatId || prev.id,
+              messages
             };
           });
-        }
-      } catch (streamError) {
-        console.error('Streaming error:', streamError);
-        if (!currentContent) {
-          setChatHistory(prev => {
-            if (!prev) return null;
-            return {
-              ...prev,
-              messages: prev.messages.map(msg => 
-                msg.id === aiMessageId
-                  ? { ...msg, content: 'Error: Failed to load response. Please try again.' }
-                  : msg
-              )
-            };
-          });
+
+          await new Promise(resolve => requestAnimationFrame(resolve));
         }
       }
-
-    } catch (err) {
-      setError('Failed to send message');
-      console.error('Error:', err);
+    } catch (error) {
+      console.error('Error sending message:', error);
     } finally {
       setIsSending(false);
     }
@@ -267,48 +241,51 @@ export default function ChatDetail() {
   );
 
   return (
-    <div className="flex flex-col h-[calc(100vh-64px)]"> {/* Subtract navbar height */}
-      {/* Header */}
-      <div className="flex items-center gap-4 p-4 border-b">
-        <IconButton size="medium" onClick={() => navigate(-1)}>
-          <ArrowBackIcon />
-        </IconButton>
-        <h1 className="text-xl font-semibold">
-          {chatHistory?.title || 'New Chat'}
-        </h1>
-      </div>
-
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-white">
-        {chatHistory?.messages.map((message) => (
-          <div
-            key={message.id}
-            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+    <div className="flex flex-col h-[calc(100vh-64px)]">
+      <div className="p-4 border-b">
+        <div className="flex items-center gap-4">
+          <IconButton 
+            onClick={() => navigate('/')}
+            color="primary"
+            edge="start"
           >
-            <div
-              className={`max-w-[70%] p-3 rounded-lg ${
-                message.role === 'user'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-50 border border-gray-200 text-gray-900'
-              }`}
-            >
-              <pre className="whitespace-pre-wrap font-sans">
-                {message.content}
-              </pre>
-            </div>
-          </div>
-        ))}
+            <ArrowBackIcon />
+          </IconButton>
+          <h1 className="text-xl font-semibold">
+            {chatHistory?.title || 'Chat'}
+          </h1>
+        </div>
       </div>
 
-      {/* Input */}
+      <div className="flex-1 overflow-auto p-4">
+        {chatHistory && (
+          <div className="space-y-4">
+            {chatHistory.messages.map((message) => (
+              <div
+                key={`${message.id}-${message.createdAt}`}
+                className={`flex ${
+                  message.role === 'user' ? 'justify-end' : 'justify-start'
+                }`}
+              >
+                <div
+                  className={`max-w-[70%] rounded-lg p-3 ${
+                    message.role === 'user'
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-gray-200 text-gray-900'
+                  }`}
+                >
+                  <pre className="whitespace-pre-wrap font-sans">
+                    {message.content}
+                  </pre>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="p-4 border-t bg-white">
-        <form onSubmit={(e) => {
-          e.preventDefault();
-          handleSendMessage(e);
-        }} className="flex gap-2">
-          <VoiceRecorder 
-            onTranscriptionComplete={handleTranscriptionComplete}
-          />
+        <form onSubmit={handleSendMessage} className="flex gap-2">
           <TextField
             fullWidth
             value={newMessage}
@@ -321,20 +298,25 @@ export default function ChatDetail() {
             maxRows={4}
             size="small"
           />
-          <IconButton
-            type="submit"
-            color="primary"
-            disabled={isSending || !newMessage.trim()}
-            className="self-end"
-          >
-            {isSending ? (
-              <CircularProgress size={24} />
-            ) : (
-              <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
-              </svg>
-            )}
-          </IconButton>
+          <div className="flex gap-2 self-end">
+            <VoiceRecorder 
+              onTranscriptionComplete={(text) => setNewMessage(text)}
+            />
+            <IconButton
+              type="submit"
+              color="primary"
+              disabled={isSending || !newMessage.trim()}
+              className="self-end"
+            >
+              {isSending ? (
+                <CircularProgress size={24} />
+              ) : (
+                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+                </svg>
+              )}
+            </IconButton>
+          </div>
         </form>
       </div>
     </div>
