@@ -1,36 +1,34 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TextField, Button, CircularProgress } from '@mui/material';
+import { TextField, IconButton, CircularProgress, Button } from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
 import { chatService } from '../../services/chatService';
-import { ChatHistory } from '../../types/chat';
-import { useAuth } from '../../contexts/AuthContext';
+import VoiceRecorder from '../../components/common/VoiceRecorder';
 
-const ChatOverview = () => {
-  const [chatChats, setChatChats] = useState<ChatHistory[]>([]);
+interface StreamResponse {
+  chatId?: number;
+  message?: string;
+  isComplete?: boolean;
+}
+
+export default function ChatOverview() {
+  const [chats, setChats] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [showNewChat, setShowNewChat] = useState(false);
   const [newMessage, setNewMessage] = useState('');
-  const [isSending, setIsSending] = useState(false);
+  const [sending, setSending] = useState(false);
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
 
   useEffect(() => {
-    if (isAuthenticated) {
-      fetchChatChats();
-    }
-  }, [isAuthenticated]);
+    fetchChats();
+  }, []);
 
-  const fetchChatChats = async () => {
+  const fetchChats = async () => {
     try {
-      setLoading(true);
-      const chats = await chatService.getChats();
-      setChatChats(chats || []);
-    } catch (err) {
-      console.error('Error fetching chats:', err);
-      if (err instanceof Error && err.message !== 'No chats found') {
-        setError('Failed to fetch chat history');
-      }
-      setChatChats([]);
+      const response = await chatService.getChats();
+      setChats(response);
+    } catch (error) {
+      console.error('Error fetching chats:', error);
     } finally {
       setLoading(false);
     }
@@ -38,101 +36,114 @@ const ChatOverview = () => {
 
   const handleNewChat = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || isSending) return;
+    if (!newMessage.trim() || sending) return;
 
+    setSending(true);
     try {
-      setIsSending(true);
-      // Send message with null chatId to create new chat
-      const response = await chatService.sendMessage(null, newMessage);
-      // Navigate to the new chat
-      navigate(`/chat/${response.chatId}`);
-    } catch (err) {
-      setError('Failed to create new chat');
+      const stream = await chatService.streamMessage(null, newMessage);
+      let chatId: number | null = null;
+      let messageContent = '';
+
+      for await (const chunk of stream) {
+        if (chunk.chatId && !chatId) {
+          chatId = chunk.chatId;
+        }
+        if (chunk.message) {
+          messageContent = chunk.message;
+        }
+        if (chunk.isComplete && chatId) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+          navigate(`/chat/${chatId}`, { replace: true });
+          break;
+        }
+      }
+    } catch (error) {
+      console.error('Error creating new chat:', error);
     } finally {
-      setIsSending(false);
+      setSending(false);
       setNewMessage('');
+      setShowNewChat(false);
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleNewChat(e as any);
-    }
+  const handleTranscriptionComplete = (text: string) => {
+    setNewMessage(text);
+    setShowNewChat(true);
   };
 
-  if (loading) return (
-    <div className="flex justify-center items-center p-8">
-      <CircularProgress />
-    </div>
-  );
-  
-  if (error) return (
-    <div className="text-red-500 text-center p-8">
-      {error}
-    </div>
-  );
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-full">
+        <CircularProgress />
+      </div>
+    );
+  }
 
   return (
-    <div className="flex flex-col items-center w-full max-w-4xl mx-auto p-8">
-      <div className="w-full max-w-md mb-8">
-        <form onSubmit={handleNewChat} className="flex flex-col gap-4">
-          <TextField
-            fullWidth
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="Type your message to start a new chat..."
-            variant="outlined"
-            disabled={isSending}
-            multiline
-            rows={3}
+    <div className="p-4">
+      <div className="mb-4 flex justify-between items-center">
+        <h1 className="text-2xl font-bold">Chats</h1>
+        <div className="flex gap-2">
+          <VoiceRecorder 
+            onTranscriptionComplete={handleTranscriptionComplete}
           />
           <Button
-            type="submit"
             variant="contained"
-            color="primary"
-            disabled={isSending || !newMessage.trim()}
-            className="w-full"
+            startIcon={<AddIcon />}
+            onClick={() => setShowNewChat(true)}
           >
-            {isSending ? (
-              <div className="flex items-center gap-2">
-                <span>Sending</span>
-                <div className="flex gap-1">
-                  <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce" />
-                  <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce [animation-delay:0.2s]" />
-                  <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce [animation-delay:0.4s]" />
-                </div>
-              </div>
-            ) : (
-              'Start New Chat'
-            )}
+            New Chat
           </Button>
-        </form>
+        </div>
       </div>
 
-      <div className="w-full">
-        {chatChats.length === 0 ? (
-          <div className="text-center text-gray-500">
-            No chats yet. Start a new conversation above!
-          </div>
-        ) : (
-          chatChats.map((chat) => (
-            <div
-              key={chat.id}
-              onClick={() => navigate(`/chat/${chat.id}`)}
-              className="p-4 border rounded-lg mb-4 cursor-pointer hover:bg-gray-50 transition-colors bg-white"
+      {showNewChat && (
+        <form onSubmit={handleNewChat} className="mb-4">
+          <div className="flex gap-2">
+            <TextField
+              fullWidth
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              placeholder="Type your message to start a new chat..."
+              variant="outlined"
+              disabled={sending}
+              multiline
+              maxRows={4}
+              size="small"
+              autoFocus
+            />
+            <IconButton
+              type="submit"
+              color="primary"
+              disabled={sending || !newMessage.trim()}
+              className="self-end"
             >
-              <h3 className="font-medium text-lg">{chat.title || 'Untitled Chat'}</h3>
-              <p className="text-sm text-gray-500">
-                {new Date(chat.createdAt).toLocaleDateString()}
-              </p>
+              {sending ? (
+                <CircularProgress size={24} />
+              ) : (
+                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+                </svg>
+              )}
+            </IconButton>
+          </div>
+        </form>
+      )}
+
+      <div className="space-y-2">
+        {chats.map((chat) => (
+          <div
+            key={chat.id}
+            onClick={() => navigate(`/chat/${chat.id}`)}
+            className="p-4 bg-white rounded-lg shadow cursor-pointer hover:bg-gray-50"
+          >
+            <div className="font-medium">{chat.title || 'Untitled Chat'}</div>
+            <div className="text-sm text-gray-500">
+              {new Date(chat.createdAt).toLocaleDateString()}
             </div>
-          ))
-        )}
+          </div>
+        ))}
       </div>
     </div>
   );
-};
-
-export default ChatOverview; 
+} 
